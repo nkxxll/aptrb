@@ -1,10 +1,11 @@
 use std::{io::Write, process::exit, str::FromStr};
 
 use chrono::prelude::Local;
-use clap::{arg, Command};
+use clap::{arg, Command as ClapCommand};
+use log::{debug, error, info, log_enabled, Level};
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 use toml::value::Datetime;
-
 const FILE: &str = "~/.local/share/aptrb/transactions.toml";
 
 #[derive(PartialEq)]
@@ -47,38 +48,39 @@ impl TransactionData {
 /// * `apt_subcommand`: apt subcommand is dependen on the tranaction type and what you want to do
 /// could be `purge` or `remove`
 /// * `packages`: the packages that should be handled with the transaction
-struct TransactionCommand<'a> {
+struct TransactionCommand {
     type_: TType,
     apt_command: String,
     apt_subcommand: String,
     packages: Vec<String>,
-    cmd: &'a mut std::process::Command,
 }
 
-impl<'a> TransactionCommand<'a> {
+impl TransactionCommand {
     /// Creates a new [`TransactionCommand`].
-    fn new(t: TType) -> &'a Self {
+    fn new(t: TType) -> Self {
         let subcom = if t == TType::Transaction {
             "install".to_string()
         } else {
             "purge".to_string()
         };
-        &TransactionCommand {
+        TransactionCommand {
             apt_command: "apt-get".to_string(),
             apt_subcommand: subcom,
             type_: TType::Transaction,
-            packages: vec![],
-            cmd: todo!(),
+            packages: vec!["-y".to_string()],
         }
     }
     /// Returns an error if the spawn of the apt-get command fails else returns nothing
-    fn exec_cmd(&mut self) -> Option<String> {
-        let out = &self.cmd.output().expect("this should spawn at least");
-        if out.status.success() {
-            None
-        } else {
-            Some(String::from_utf8_lossy(&out.stderr).to_string())
-        }
+    fn to_cmd(&self) -> Command {
+        let mut cmd = Command::new(&self.apt_command);
+        cmd.arg(&self.apt_subcommand);
+        cmd.args(&self.packages);
+        cmd
+    }
+
+    fn add_packages(&mut self, packages: &mut Vec<String>) -> &mut Self {
+        self.packages.append(packages);
+        self
     }
 }
 
@@ -89,18 +91,18 @@ fn current_time() -> String {
     now.format(fmt_str).to_string()
 }
 
-fn get_command() -> clap::Command {
-    Command::new("aptrb")
+fn get_command() -> ClapCommand {
+    ClapCommand::new("aptrb")
         .version("0.1")
         .about("Rollback apt installed packages after installing and e.g. building a project")
         .subcommand(
-            Command::new("rollback")
+            ClapCommand::new("rollback")
                 .about("Rollback a specific or the lates transaciton")
                 .visible_alias("r")
                 .arg(arg!(-n --name <name> "Rollback name").required(false)),
         )
         .subcommand(
-            Command::new("transaction")
+            ClapCommand::new("transaction")
                 .visible_alias("t")
                 .about("Start a new transaciton")
                 .arg(arg!(<packages>... "Packeges of the transaction").required(true))
@@ -113,6 +115,7 @@ fn get_command() -> clap::Command {
 }
 
 fn main() {
+    env_logger::init();
     // todo: feature do we want to give a rollback a name like "optee project"
     // usage would be aptrb
     let app = get_command();
@@ -133,6 +136,9 @@ fn main() {
                 .get_one::<Vec<String>>("packages")
                 .expect("There have to be some messages");
 
+            info!("packages: {:?}", packages);
+            cmd.add_packages(&mut packages.to_vec());
+
             if let Some(f) = transaction_matches.get_one::<String>("file") {
                 file = &f;
             }
@@ -142,13 +148,9 @@ fn main() {
             transaction.packages = packages.to_vec();
             cmd.packages = packages.to_vec();
 
-            // execute the command
-            if let Some(s) = cmd.exec_cmd() {
-                println!("There was an error executing apt command:");
-                println!("{}", s);
-                exit(1)
-            }
-
+            // vvv todo: this vvv
+            // generate the command
+            //  execute the command
             // command was executed successfully
             // so we write the transaction to the file
 
@@ -169,6 +171,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+
     use super::*;
 
     #[test]
@@ -208,5 +212,29 @@ mod tests {
         // try to parse it with to toml datetime
         let time = current_time();
         let _ = Datetime::from_str(&time).expect("Error while parsing time");
+    }
+
+    #[test]
+    fn test_transaction_command() {
+        let cmd = TransactionCommand::new(TType::Transaction);
+        let cmd = cmd.to_cmd();
+        assert_eq!(cmd.get_program(), "apt-get");
+        assert_eq!(
+            *cmd.get_args().collect::<Vec<&OsStr>>().first().unwrap(),
+            "install"
+        );
+    }
+
+    #[test]
+    fn test_rollback_command() {
+        let mut cmd = TransactionCommand::new(TType::Rollback);
+        let mut packages = vec!["package1".to_string(), "package2".to_string()];
+        cmd.add_packages(&mut packages);
+        let cmd = cmd.to_cmd();
+        assert_eq!(cmd.get_program(), "apt-get");
+        let mut iter = cmd.get_args().collect::<Vec<&OsStr>>().into_iter();
+        assert_eq!(iter.next().unwrap(), "purge");
+        assert_eq!(iter.next().unwrap(), "package1");
+        assert_eq!(iter.next().unwrap(), "package2");
     }
 }
