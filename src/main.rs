@@ -1,8 +1,12 @@
-use std::{io::Write, process::exit, str::FromStr};
+use std::{
+    io::{Read, Write},
+    process::exit,
+    str::FromStr,
+};
 
 use chrono::prelude::Local;
 use clap::{arg, Command as ClapCommand};
-use log::{debug, error, info, log_enabled, Level};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use toml::value::Datetime;
@@ -49,7 +53,6 @@ impl TransactionData {
 /// could be `purge` or `remove`
 /// * `packages`: the packages that should be handled with the transaction
 struct TransactionCommand {
-    type_: TType,
     apt_command: String,
     apt_subcommand: String,
     packages: Vec<String>,
@@ -66,7 +69,6 @@ impl TransactionCommand {
         TransactionCommand {
             apt_command: "apt-get".to_string(),
             apt_subcommand: subcom,
-            type_: TType::Transaction,
             packages: vec!["-y".to_string()],
         }
     }
@@ -150,10 +152,26 @@ fn main() {
 
             // vvv todo: this vvv
             // generate the command
+            let mut syscmd = cmd.to_cmd();
             //  execute the command
+            let res = syscmd.spawn();
             // command was executed successfully
+            match res {
+                Ok(c) => {
+                    let mut buf = String::new();
+                    let _ = c.stdout.unwrap().read_to_string(&mut buf);
+                    info!("{}", &buf);
+                }
+                Err(e) => {
+                    error!(
+                        "There was an error executing this file!\n {}",
+                        e.to_string()
+                    );
+                    exit(1);
+                }
+            }
             // so we write the transaction to the file
-
+            info!("Writing the packages to the file.");
             let mut fd = std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -234,6 +252,8 @@ mod tests {
         assert_eq!(cmd.get_program(), "apt-get");
         let mut iter = cmd.get_args().collect::<Vec<&OsStr>>().into_iter();
         assert_eq!(iter.next().unwrap(), "purge");
+        // this is that we don't have to interact
+        assert_eq!(iter.next().unwrap(), "-y");
         assert_eq!(iter.next().unwrap(), "package1");
         assert_eq!(iter.next().unwrap(), "package2");
     }
