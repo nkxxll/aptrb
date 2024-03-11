@@ -18,6 +18,37 @@ enum TType {
     Rollback,
 }
 
+#[derive(Serialize, Deserialize)]
+/// This is the struct that holds all the transactions as a list:
+/// ```
+/// [[TransactionData]]
+/// ...
+///
+/// [[TransactionData]]
+/// ...
+/// ```
+///
+/// * `transactions`: list of [TransactionData]
+struct FullTransactions {
+    transactions: Vec<TransactionData>,
+}
+
+impl FullTransactions {
+    fn new() -> Self {
+        FullTransactions {
+            transactions: vec![],
+        }
+    }
+    /// read the files contents and save / parse them to / in the struct
+    fn read(&mut self) -> () {
+        todo!("read the file and parse to object")
+    }
+    /// sync the file data with the apps state
+    fn sync(&mut self) -> () {
+        todo!("if the contents changed update the file")
+    }
+}
+
 /// Struct that stores the transacion data
 /// [TransactionData] is used to store the transactions in a e.g. toml file
 ///
@@ -142,7 +173,7 @@ fn main() {
             cmd.add_packages(&mut packages.to_vec());
 
             if let Some(f) = transaction_matches.get_one::<String>("file") {
-                file = &f;
+                file = f;
             }
             if let Some(transaction_name) = transaction_matches.get_one::<String>("name") {
                 transaction.name = Some(transaction_name.to_string());
@@ -171,15 +202,15 @@ fn main() {
                 }
             }
             // so we write the transaction to the file
-            info!("Writing the packages to the file.");
-            let mut fd = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(file)
-                .expect("Could not open file");
-            let toml = toml::to_string(&transaction).expect("Could not serialize to toml");
-            fd.write_all(toml.as_bytes())
-                .expect("Could not write to file");
+            // info!("Writing the packages to the file.");
+            // let mut fd = std::fs::OpenOptions::new()
+            //     .create(true)
+            //     .append(true)
+            //     .open(file)
+            //     .expect("Could not open file");
+            // let toml = toml::to_string(&transaction).expect("Could not serialize to toml");
+            // fd.write_all(toml.as_bytes())
+            //     .expect("Could not write to file");
         }
         _ => unreachable!(), // Should never happen due to clap's built-in validation
     }
