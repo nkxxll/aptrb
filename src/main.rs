@@ -1,4 +1,6 @@
 use std::{
+    ffi::OsStr,
+    fs::{self, File},
     io::{Read, Write},
     process::exit,
     str::FromStr,
@@ -39,13 +41,22 @@ impl FullTransactions {
             transactions: vec![],
         }
     }
+    /// search a specific transaction by name
+    fn search(&self, name: String) -> TransactionData {
+        todo!("implement the search for rollback")
+    }
     /// read the files contents and save / parse them to / in the struct
-    fn read(&mut self) -> () {
-        todo!("read the file and parse to object")
+    fn read(&mut self) {
+        let file = fs::read_to_string(FILE).expect("could not read the file");
+        self.transactions = toml::from_str(&file).expect("could not deserialize toml from file");
+    }
+    fn update(&mut self, t: TransactionData) {
+        self.transactions.push(t);
     }
     /// sync the file data with the apps state
-    fn sync(&mut self) -> () {
-        todo!("if the contents changed update the file")
+    fn sync(&self) {
+        let file = toml::to_string(&self).expect("could not serialize data");
+        fs::write(FILE, file).expect("could not write to file");
     }
 }
 
@@ -201,6 +212,14 @@ fn main() {
                     exit(1);
                 }
             }
+            let mut ft = FullTransactions::new();
+            // todo: implement those
+            // read the data from the file and parse it
+            ft.read();
+            // update the state if it changed
+            ft.update(transaction);
+            // sync the changes to the file
+            ft.sync();
             // so we write the transaction to the file
             // info!("Writing the packages to the file.");
             // let mut fd = std::fs::OpenOptions::new()
